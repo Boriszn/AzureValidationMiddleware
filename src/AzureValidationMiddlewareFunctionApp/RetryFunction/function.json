@@ -1,0 +1,17 @@
+{
+  "bindings": [
+    {
+      "name": "Timer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "0 */5 * * * *"
+    },
+    {         
+      "type": "queue",         
+      "name": "processedQueueItem",         
+      "queueName": "processed-event-q",         
+      "connection": "devshared01events_STORAGE",         
+      "direction": "out"    
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "appInsightsID":        {"value": null},
+        "appServiceName":       {"value": null},
+        "appServicePlanName":   {"value": null},
+        "resourceGroupName":    {"value": null},
+        "storageAccountName":   {"value": null},
+        "subscriptionIdShared": {"value": null},
+        "eventGridStorageAccountName" : {"value": null},
+        "eventGridStorageAccountAcessKey"  : {"value": null}
+    }
+}

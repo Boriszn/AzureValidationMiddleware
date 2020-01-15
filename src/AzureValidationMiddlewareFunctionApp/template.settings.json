@@ -1,0 +1,19 @@
+{
+  "DatabaseToValidate": "##DatabaseToValidate##",
+  "DatabaseServerToValidate": "##DatabaseServerToValidate##",
+  "DatabaseUserToValidate": "##DatabaseUserToValidate##", 
+  "DevcloudDevSharedVaultName": "##DevcloudDevSharedVaultName##",
+  "DbSqlPasswordSecret": "##DbSqlPasswordSecret##",
+  "DbSqlPassword": "##DbSqlPassword##",
+  "PrincipalAccountId": "##PrincipalAccountId##",
+  "SecurityToken": "##SecurityToken##",
+  "SharedKeyVaultName": "##SharedKeyVaultName##",
+  "AutomationAccountWebhookSecret": "##MangedIdentityWebhookSecret##",
+  "DbSyncNewVmWebhook": "##DbSyncNewVmWebhook##",
+  "ResourceGroupName": "##EventGridResourceGroupName##",
+  "StorageAccountName" : "##EventGridStorageAccountName##",
+  "MainEventQueue": "##MainEventQueue##",
+  "ProcessedQueueName": "##ProcessedQueueName##",
+  "RetryQueueName": "##RetryQueueName##",
+  "LabSubscription": "##LabSubscription##"
+}

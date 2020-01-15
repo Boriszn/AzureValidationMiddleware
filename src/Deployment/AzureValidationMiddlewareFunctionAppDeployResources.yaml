@@ -1,0 +1,301 @@
+resources:
+- repo: self
+
+trigger:
+- develop
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+
+  - job: Azure Validation Middleware Function App Deployment
+    displayName: Azure Validation Middleware Function App
+
+    variables:
+      hubid: '01'
+      environmentName: 'shared'
+      environment: 'dev'
+      subscriptionIdLab: "<GUID subscription>"
+
+      ### Function app configuration variables
+      # Path variables
+      deploymentRootPath: 'Deployment/arm'
+      # ARM templates
+      functionAppDeploymentArmTemplatePath: '$(deploymentRootPath)/AzureValidationMiddlewareFunctionApp.json'
+      functionAppDeploymentArmTemplateParamsFilePath: '$(deploymentRootPath)/AzureValidationMiddlewareFunctionApp.parameters.json'
+      functionsRepositoryPath: '$(Build.SourcesDirectory)/AzureValidationMiddleware/src'
+      functionConfigurationFilePath: '$(functionsRepositoryPath)/template.settings.json'
+      eventgridQueueTrigerFunctionFilePath: '$(functionsRepositoryPath)/EventgridQueueTrigerFunction/function.json'
+      retryTimerFunctionFilePath: '$(functionsRepositoryPath)/RetryTimerFunction/function.json'
+
+      # SQL DB option variables
+      databaseToValidate: "test-db"
+      databaseServerToValidate: "$(environment)$(databaseToValidate).mssql.database.azure.com"
+      databaseUserToValidate: "adminuser@$(environment)db"
+      devcloudDevSharedVaultName: "$(environment)-shared-kv"
+      dbSqlPasswordSecret: "dbsqlpassword"
+      # General configuration file variables
+      sharedKeyVaultName: '$(environment)-shared-wh-kv'
+      automationAccountWebhookSecret: 'db-new-vmWebhook'
+      
+      ### Function App Resource group variables (eg. name, rg-name, loganalytics etc)
+      functionName: 'validation-middleware-function'
+      functionAppName: '$(functionName)-app'
+      resourceGroupName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-rg'
+      appServiceName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-service'
+      appServicePlanName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-serviceplan'
+      storageAccountName: '$(environment)shdbnagefst'
+      appInsightsID: '/subscriptions/$(subscriptionIdShared)/resourceGroups/$(environment)-$(environmentName)-$(hubid)-loganalytics-rg/providers/microsoft.insights/components/$(environment)-$(environmentName)-$(hubid)-loganalytics-ai'
+
+      # Event Grid + Storage Account variables
+      eventGridName: '$(environment)-$(environmentName)-$(hubid)-validation-middleware-eg'
+      eventGridNameResourceGroupName: '$(eventGridName)-rg'
+      ## Topic is object which will generates events 
+      eventGridTopic: '/subscriptions/$(subscriptionIdLab)'
+      eventGridQueueStorageAccountName: '$(environment)$(environmentName)$(hubid)egrid'
+      eventGridStorageAccountRg: $(eventGridNameResourceGroupName)
+      mainEventQueue: 'main-event-q'
+      processedQueueName: 'processed-event-q'
+      retryQueueName: 'retry-event-q'
+    
+    steps:
+
+    # Deploy EventGrid and Storage Account (Where Topic -> Subscription and Endpoint -> Storage Queue)
+    - task: AzurePowerShell@3
+      displayName: 'Deploy EventGrid and Storage Account. Where Topic is Subscription and Endpoint is Storage Queue'
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        scriptType: "inlineScript"
+        azurePowerShellVersion: LatestVersion
+        inline: | 
+          # Variables
+          $rsourceGroup="$(eventGridNameResourceGroupName)"
+          $storagename="$(eventGridQueueStorageAccountName)"
+          $queuename="$(mainEventQueue)"
+          $topicname="$(eventGridName)-topic" 
+          $eventSubscriptionName="$(eventGridName)"
+          $topicid="$(eventGridTopic)"
+          $storageSKU = "Standard_LRS"
+          $location = "westeurope"
+
+          # Set az context
+          az account set -s $(subscriptionShared) 
+          az account show
+
+          # 1. Create a resource group
+          Write-Host "----- Creating Resource Group " $rsourceGroup
+          az group create --name $rsourceGroup --location $location
+
+          # 2. Create a custom topic
+          Write-Host "----- Creating Custom topic " $topicname
+          az eventgrid topic create --name $topicname -l $location -g $rsourceGroup
+
+          # 3. Create Queue storage with main Queue and 2 additinal queue (processedQueue, failedQueue)
+          Write-Host "----- Creating Queue storage with Queue "  $storagename " | "  $queuename
+          az storage account create -n $storagename -g $rsourceGroup -l $location --sku $storageSKU
+          az storage queue create --name $queuename --account-name $storagename
+          ## 3.1 Create 2 additinal Queues 
+          az storage queue create --name $(processedQueueName) --account-name $storagename
+          az storage queue create --name $(retryQueueName) --account-name $storagename
+          ## 3.2 Get storage access key 
+          $storageAccountAccessKey = (az storage account keys list -g $rsourceGroup -n $storagename  --query '[0].value' -o tsv)
+          Write-Host "##vso[task.setvariable variable=storageAccountAccessKey;]$storageAccountAccessKey"
+          
+          # 4. Subscribe to a custom topic
+          Write-Host "----- Creating Event Grid Subscription " $eventSubscriptionName " | topic Id "  $topicid
+          $storageid=$(az storage account show --name $storagename --resource-group $rsourceGroup --query id --output tsv)
+          $queueid="$storageid/queueservices/default/queues/$queuename"
+          
+          # 5. Create Event Grid Subscription
+          az eventgrid event-subscription create `
+            --source-resource-id $topicid `
+            --name $eventSubscriptionName `
+            --endpoint-type "storagequeue" `
+            --endpoint $queueid `
+            --included-event-types Microsoft.Resources.ResourceWriteSuccess `
+            --advanced-filter data.operationName StringContains 'Microsoft.Compute/virtualMachines/write'
+          
+    #[Azure Deployment]: Create Or Update Resource Group for Azure Function App
+    - task: AzureResourceGroupDeployment@2
+      displayName: 'Azure Deployment: Create Or Update Resource Group for the Azure Function App'
+      enabled: true
+      inputs:
+        azureSubscription: '$(subscriptionShared)'
+        resourceGroupName: '$(resourceGroupName)'
+        location: 'westeurope'
+        csmFile: '$(functionAppDeploymentArmTemplatePath)'
+        csmParametersFile: '$(functionAppDeploymentArmTemplateParamsFilePath)'
+        overrideParameters: '
+          -appInsightsID "$(appInsightsID)" 
+          -appServiceName "$(appServiceName)" 
+          -appServicePlanName "$(appServicePlanName)"
+          -resourceGroupName "$(resourceGroupName)" 
+          -storageAccountName "$(storageAccountName)" 
+          -subscriptionIdShared "$(subscriptionIdShared)" 
+          -eventGridStorageAccountAcessKey "DefaultEndpointsProtocol=https;AccountName=$(eventGridQueueStorageAccountName);AccountKey=$(storageAccountAccessKey)"
+          -eventGridStorageAccountName "$(eventGridQueueStorageAccountName)_STORAGE"
+          '
+
+    # Get keyvault secrets
+    - task: AzureKeyVault@1
+      displayName: "Get Keyvault Secrets"
+      continueOnError: true
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        KeyVaultName: '$(environment)-shared-kv'
+        SecretsFilter: dbsqlpassword, ValidationMeedlewareFunctionApp-WebRequestSecurityToken
+            
+    # Replace configuration template file
+    - task: AzurePowerShell@3
+      displayName: 'Replace values in configuration Template file (template.settings.json)'
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        scriptType: "inlineScript"
+        azurePowerShellVersion: LatestVersion
+        inline: | 
+            # Replace configuration section
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##PrincipalAccountId##','$(servicePrincipalClientId)') | 
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace SecurityToken
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##SecurityToken##','$(ValidationMeedlewareFunctionApp-WebRequestSecurityToken)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace SharedKeyVaultName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##SharedKeyVaultName##','$(sharedKeyVaultName)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace MangedIdentityWebhookSecret
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##AutomationAccountWebhookSecret##','$(automationAccountWebhookSecret)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace EventGridResourceGroupName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##EventGridResourceGroupName##','$(eventGridStorageAccountRg)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace EventGridQueueStorageAccountName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##EventGridStorageAccountName##','$(eventGridQueueStorageAccountName)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace MainEventQueue
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##MainEventQueue##','$(mainEventQueue)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace ProcessedQueueName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##ProcessedQueueName##','$(processedQueueName)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace RetryQueueName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##RetryQueueName##','$(retryQueueName)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace DatabaseToValidate
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DatabaseToValidate##','$(databaseToValidate)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace databaseServerToValidate
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DatabaseServerToValidate##','$(databaseServerToValidate)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace database User To Validate
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DatabaseUserToValidate##','$(databaseUserToValidate)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace devcloudDevSharedVaultName
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DevcloudDevSharedVaultName##','$(devcloudDevSharedVaultName)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace dbSqlPasswordSecret
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DbSqlPasswordSecret##','$(dbSqlPasswordSecret)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace dbSqlPassword
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DbSqlPassword##','$(dbSqlPassword)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace LabSubscription
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##LabSubscription##','$(subscriptionLab)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            # Replace db-sync-new-vmWebhook
+            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##DbSyncNewVmWebhook##','$(db-new-vmWebhook)') |
+            Set-Content -Path $(functionConfigurationFilePath)
+            
+            # Display configuration content
+            Get-Content -path  $(functionConfigurationFilePath)
+    
+    # Replace storage account name in EventgridQueueTrigerFunction and in RetryTimerFunction function.json file
+    - task: AzurePowerShell@3
+      displayName: 'Replace storage account name in EventgridQueueTrigerFunction and in RetryTimerFunction function.json file'
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        scriptType: "inlineScript"
+        azurePowerShellVersion: LatestVersion
+        inline: | 
+            # Replace storage account in EventgridQueueTrigerFunction 
+            ((Get-Content -path $(eventgridQueueTrigerFunctionFilePath) -Raw) -replace 'devshared01events_STORAGE','$(eventGridQueueStorageAccountName)_STORAGE') | 
+              Set-Content -Path $(eventgridQueueTrigerFunctionFilePath)
+           
+            # Replace storage account in RetryTimerFunction 
+            ((Get-Content -path $(retryTimerFunctionFilePath) -Raw) -replace 'devshared01events_STORAGE','$(eventGridQueueStorageAccountName)_STORAGE') | 
+              Set-Content -Path $(retryTimerFunctionFilePath)
+            
+            # Display configuration content
+            Get-Content -path  $(retryTimerFunctionFilePath)
+            Get-Content -path  $(eventgridQueueTrigerFunctionFilePath)
+
+    # Buld deployment archive
+    - task: ArchiveFiles@2
+      displayName: 'Build deployment arhive of Azure Function App'
+      inputs:
+        rootFolderOrFile: '$(functionsRepositoryPath)' 
+        includeRootFolder: false 
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/AzureValidationMeedlewareFunctionApp.zip' 
+        replaceExistingArchive: true
+
+    # Deploy azure function from Archive
+    - task: AzureFunctionApp@1
+      displayName: Deploy Azure Function App
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        appName: $(appServiceName)
+        package: $(build.artifactstagingdirectory)/AzureValidationMeedlewareFunctionApp.zip
+
+    # Assign Contributor role for MSI principal
+    - task: AzurePowerShell@3
+      displayName: 'Assign Contributor for MSI Role'
+      continueOnError: true
+      inputs:
+        azureSubscription: $(subscriptionShared)
+        scriptType: "inlineScript"
+        azurePowerShellVersion: LatestVersion
+        inline: | 
+
+         # Get ObjectId from AD Servcie Principal by Display Name  
+         $objectId = (az ad sp list --all --display-name $(appServiceName) --query '[0].objectId' -o tsv)
+         echo "-- Function app ObjectId $objectId"
+
+         # Check is role assignment alredy exists
+         if((Get-AzureRmRoleAssignment -ObjectId $objectId).Count -ne 0){
+           Write-Host "-- Getting the Role Assignment info --"
+           Get-AzureRmRoleAssignment -ObjectId $objectId
+         }
+
+          # Create role assignment for Virtual Machines and Network Interfaces to the Lab Sabscription
+          try 
+          { 
+            Write-Host "-- Creating role assignment for Lab Subscription "  $(subscriptionIdLab) ". Resource Group Name" $(eventGridQueueStorageAccountName)
+
+            New-AzureRmRoleAssignment `
+              -ObjectId $objectId `
+              -RoleDefinitionName "Contributor" `
+              -Scope "/subscriptions/$(subscriptionIdLab)"
+          }
+          catch {
+              Write-Host "An error occurred:"
+              Write-Host $_
+          }
+
+          # Create role assignment for StorageAccounts to the Function App
+          try 
+          { 
+
+            Write-Host "-- Creating role assignment for Resource Name " $(eventGridQueueStorageAccountName) ". Resource Group Name " $(eventGridStorageAccountRg)
+            
+            New-AzureRmRoleAssignment `
+                -ObjectId $objectId `
+                -RoleDefinitionName "Contributor" `
+                -ResourceName "$(eventGridQueueStorageAccountName)" `
+                -ResourceType "Microsoft.Storage/storageAccounts" `
+                -ResourceGroupName "$(eventGridStorageAccountRg)"
+          }
+          catch {
+              Write-Host "An error occurred:"
+              Write-Host $_
+          }

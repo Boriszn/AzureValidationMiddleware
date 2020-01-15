@@ -1,0 +1,25 @@
+{
+  "bindings": [
+    {
+      "name": "QueueItem",
+      "type": "queueTrigger",
+      "direction": "in",
+      "queueName": "main-event-q",
+      "connection": "devshared01events_STORAGE"
+    },
+    {         
+        "type": "queue",         
+        "name": "failedQueueItem",         
+        "queueName": "failed-event-q",         
+        "connection": "devshared01events_STORAGE",         
+        "direction": "out"     
+    },
+    {         
+      "type": "queue",         
+      "name": "processedQueueItem",         
+      "queueName": "processed-event-q",         
+      "connection": "devshared01events_STORAGE",         
+      "direction": "out"     
+    }
+  ]
+}
