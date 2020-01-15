@@ -30,13 +30,13 @@ Also following solution recommended to use in following cases:
 
 ## Hight-level Architecture 
 
-![Azure Validation Middleware](/assets/img/event-driven-architecture-main.jpg   "Azure Validation Middleware")
+![Azure Validation Middleware](https://raw.githubusercontent.com/Boriszn/AzureValidationMiddleware/master/src/assets/img/event-driven-architecture-main.jpg   "Azure Validation Middleware")
 
 ### Azure function's workflow  
 
-![Azure function's workflow](/assets/img/event-driven-architecture-main.jpg   "Azure function's workflow")
+![Azure function's workflow](https://raw.githubusercontent.com/Boriszn/AzureValidationMiddleware/master/src/assets/img/event-queue-functions-workflow.jpg   "Azure function's workflow")
 
-![Runbook workflow triggering](/assets/img/event-driven-architecture-main.jpg   "Runbook workflow triggering")
+![Runbook workflow triggering](https://raw.githubusercontent.com/Boriszn/AzureValidationMiddleware/master/src/assets/img/event-queue-functions-workflow-runbook.jpg  "Runbook workflow triggering")
 
 ## Contributing
 
