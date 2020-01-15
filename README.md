@@ -1,5 +1,5 @@
 
-![logo header](/assets/img/event-driven-architecture-main.jpg   "logo header")
+![logo header](https://raw.githubusercontent.com/Boriszn/AzureValidationMiddleware/master/src/assets/img/logo-header.jpg  "logo header")
 
 # Azure Validation Middleware  
 
