@@ -6,11 +6,11 @@ Using module ".\..\common\Configuration.psm1"
 # Input bindings are passed in via param block.
 param([System.Collections.Hashtable] $QueueItem, $TriggerMetadata)
 
-#1. Create object of QueueFunction class and trigger Main enrty function
-[QueueFunction]::new().Main($QueueItem, $TriggerMetadata)
+#1. Create object of ValidationFunction class and trigger Main enrty function
+[ValidationFunction]::new().Main($QueueItem, $TriggerMetadata)
 
 #2. function class declaration
-class QueueFunction
+class ValidationFunction
 {
     $ValidationManager
     $AutomationRunbookManager
