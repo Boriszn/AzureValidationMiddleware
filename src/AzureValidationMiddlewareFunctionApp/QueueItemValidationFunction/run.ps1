@@ -17,7 +17,7 @@ class ValidationFunction
     $AuthorisationTokenManager
     $Configuration
 
-    QueueFunction()
+    ValidationFunction()
     {
         # Init dependent objects
         $this.Configuration = [ConfigurationMapper]::new()
