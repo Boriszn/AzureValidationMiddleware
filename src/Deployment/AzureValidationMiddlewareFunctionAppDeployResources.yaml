@@ -16,7 +16,7 @@ jobs:
       hubid: '01'
       environmentName: 'shared'
       environment: 'dev'
-      subscriptionIdLab: "<GUID subscription>"
+      subscriptionId: "<GUID subscription>"
 
       ### Function app configuration variables
       # Path variables
@@ -52,7 +52,7 @@ jobs:
       eventGridName: '$(environment)-$(environmentName)-$(hubid)-validation-middleware-eg'
       eventGridNameResourceGroupName: '$(eventGridName)-rg'
       ## Topic is object which will generates events 
-      eventGridTopic: '/subscriptions/$(subscriptionIdLab)'
+      eventGridTopic: '/subscriptions/$(subscriptionId)'
       eventGridQueueStorageAccountName: '$(environment)$(environmentName)$(hubid)egrid'
       eventGridStorageAccountRg: $(eventGridNameResourceGroupName)
       mainEventQueue: 'main-event-q'
@@ -270,12 +270,12 @@ jobs:
           # Create role assignment for Virtual Machines and Network Interfaces to the Lab Sabscription
           try 
           { 
-            Write-Host "-- Creating role assignment for Lab Subscription "  $(subscriptionIdLab) ". Resource Group Name" $(eventGridQueueStorageAccountName)
+            Write-Host "-- Creating role assignment for  Subscription "  $(subscriptionId) ". Resource Group Name" $(eventGridQueueStorageAccountName)
 
             New-AzureRmRoleAssignment `
               -ObjectId $objectId `
               -RoleDefinitionName "Contributor" `
-              -Scope "/subscriptions/$(subscriptionIdLab)"
+              -Scope "/subscriptions/$(subscriptionId)"
           }
           catch {
               Write-Host "An error occurred:"
