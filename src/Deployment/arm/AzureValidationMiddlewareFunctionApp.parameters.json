@@ -7,7 +7,7 @@
         "appServicePlanName":   {"value": null},
         "resourceGroupName":    {"value": null},
         "storageAccountName":   {"value": null},
-        "subscriptionIdShared": {"value": null},
+        "subscriptionIdSource": {"value": null},
         "eventGridStorageAccountName" : {"value": null},
         "eventGridStorageAccountAcessKey"  : {"value": null}
     }

@@ -13,11 +13,11 @@ jobs:
     displayName: Azure Validation Middleware Function App
 
     variables:
-      hubid: '01'
-      environmentName: 'shared'
+      
       environment: 'dev'
-      subscriptionId: "<GUID subscription>"
-
+      subscriptionIdToObserve: "<GUID subscription>"
+      subscriptionIdSource: "<GUID subscription>"
+      
       ### Function app configuration variables
       # Path variables
       deploymentRootPath: 'Deployment/arm'
@@ -36,24 +36,24 @@ jobs:
       devcloudDevSharedVaultName: "$(environment)-shared-kv"
       dbSqlPasswordSecret: "dbsqlpassword"
       # General configuration file variables
-      sharedKeyVaultName: '$(environment)-shared-wh-kv'
+      sharedKeyVaultName: '$(environment)-shared-kv'
       automationAccountWebhookSecret: 'db-new-vmWebhook'
       
       ### Function App Resource group variables (eg. name, rg-name, loganalytics etc)
       functionName: 'validation-middleware-function'
       functionAppName: '$(functionName)-app'
-      resourceGroupName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-rg'
-      appServiceName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-service'
-      appServicePlanName: '$(environment)-$(environmentName)-$(hubid)-$(functionAppName)-serviceplan'
+      resourceGroupName: '$(environment)-$(functionAppName)-rg'
+      appServiceName: '$(environment)-$(functionAppName)-service'
+      appServicePlanName: '$(environment)-$(functionAppName)-serviceplan'
       storageAccountName: '$(environment)shdbnagefst'
-      appInsightsID: '/subscriptions/$(subscriptionIdShared)/resourceGroups/$(environment)-$(environmentName)-$(hubid)-loganalytics-rg/providers/microsoft.insights/components/$(environment)-$(environmentName)-$(hubid)-loganalytics-ai'
+      appInsightsID: '/subscriptions/$(subscriptionIdSource)/resourceGroups/$(environment)-loganalytics-rg/providers/microsoft.insights/components/$(environment)-$(environmentName)-$(hubid)-loganalytics-ai'
 
       # Event Grid + Storage Account variables
-      eventGridName: '$(environment)-$(environmentName)-$(hubid)-validation-middleware-eg'
+      eventGridName: '$(environment)-validation-middleware-eg'
       eventGridNameResourceGroupName: '$(eventGridName)-rg'
       ## Topic is object which will generates events 
-      eventGridTopic: '/subscriptions/$(subscriptionId)'
-      eventGridQueueStorageAccountName: '$(environment)$(environmentName)$(hubid)egrid'
+      eventGridTopic: '/subscriptions/$(subscriptionIdToObserve)'
+      eventGridQueueStorageAccountName: '$(environment)vmegrid'
       eventGridStorageAccountRg: $(eventGridNameResourceGroupName)
       mainEventQueue: 'main-event-q'
       processedQueueName: 'processed-event-q'
@@ -132,7 +132,7 @@ jobs:
           -appServicePlanName "$(appServicePlanName)"
           -resourceGroupName "$(resourceGroupName)" 
           -storageAccountName "$(storageAccountName)" 
-          -subscriptionIdShared "$(subscriptionIdShared)" 
+          -subscriptionIdSource "$(subscriptionIdSource)" 
           -eventGridStorageAccountAcessKey "DefaultEndpointsProtocol=https;AccountName=$(eventGridQueueStorageAccountName);AccountKey=$(storageAccountAccessKey)"
           -eventGridStorageAccountName "$(eventGridQueueStorageAccountName)_STORAGE"
           '
@@ -143,7 +143,7 @@ jobs:
       continueOnError: true
       inputs:
         azureSubscription: $(subscriptionShared)
-        KeyVaultName: '$(environment)-shared-kv'
+        KeyVaultName: '$(environment)-az-validation-meddleware-kv'
         SecretsFilter: dbsqlpassword, ValidationMeedlewareFunctionApp-WebRequestSecurityToken
             
     # Replace configuration template file
@@ -270,12 +270,12 @@ jobs:
           # Create role assignment for Virtual Machines and Network Interfaces to the Lab Sabscription
           try 
           { 
-            Write-Host "-- Creating role assignment for  Subscription "  $(subscriptionId) ". Resource Group Name" $(eventGridQueueStorageAccountName)
+            Write-Host "-- Creating role assignment for Lab Subscription "  $(subscriptionIdToObserve) ". Resource Group Name" $(eventGridQueueStorageAccountName)
 
             New-AzureRmRoleAssignment `
               -ObjectId $objectId `
               -RoleDefinitionName "Contributor" `
-              -Scope "/subscriptions/$(subscriptionId)"
+              -Scope "/subscriptions/$(subscriptionIdToObserve)"
           }
           catch {
               Write-Host "An error occurred:"
