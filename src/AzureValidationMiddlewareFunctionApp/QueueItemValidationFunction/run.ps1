@@ -85,14 +85,14 @@ class ValidationFunction
         else
         {
             Write-Host "--- Database is not reacheble ---" 
-            # 4. Put message to failed queue
-            $this.SendToFailedQueue($QueueItem)
+            # 4. Put message to retry queue
+            $this.SendToRetryQueue($QueueItem)
         }
     }
 
-    hidden [void] SendToFailedQueue($QueueItem)
+    hidden [void] SendToRetryQueue($QueueItem)
     {
-        Push-OutputBinding -Name failedQueueItem -Value $QueueItem
+        Push-OutputBinding -Name retryQueueItem -Value $QueueItem
     }
 
     hidden [void] SendToProcessedQueue($QueueItem)

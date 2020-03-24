@@ -86,8 +86,7 @@ class RetryTimerFunction
             # 5. Delete message 
             $this.QueueManager.DeleteFailedMessageFromQueue();
 
-            Write-Host "-- Getting Az Key Vault Secret " $this.Configuration.MangedIdentityWebhookSecret
-
+            # Write-Host "-- Getting Az Key Vault Secret " $this.Configuration.MangedIdentityWebhookSecret
             # Get webhook from the key vault
             # $webHookName = (Get-AzKeyVaultSecret -VaultName $this.Configuration.SharedKeyVaultName `
             #                      -Name $this.Configuration.MangedIdentityWebhookSecret).SecretValueText

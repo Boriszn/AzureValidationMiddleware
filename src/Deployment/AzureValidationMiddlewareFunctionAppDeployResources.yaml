@@ -9,35 +9,35 @@ pool:
 
 jobs:
 
-  - job: Azure Validation Middleware Function App Deployment
+  - job: Azure_Validation_Middleware_Function_AppDeployment
     displayName: Azure Validation Middleware Function App
 
     variables:
       
       environment: 'dev'
-      subscriptionIdToObserve: "<GUID subscription>"
-      subscriptionIdSource: "<GUID subscription>"
+      subscriptionIdToObserve: "6690b014-bdbd-4496-98ee-f2f255699f70"
+      subscriptionIdSource: "6690b014-bdbd-4496-98ee-f2f255699f70"
+      servicePrincipalClientId: "096987b5-0f60-49d9-848f-c946fa197834"
       
       ### Function app configuration variables
       # Path variables
-      deploymentRootPath: 'Deployment/arm'
+      deploymentRootPath: 'src/Deployment/arm'
       # ARM templates
       functionAppDeploymentArmTemplatePath: '$(deploymentRootPath)/AzureValidationMiddlewareFunctionApp.json'
       functionAppDeploymentArmTemplateParamsFilePath: '$(deploymentRootPath)/AzureValidationMiddlewareFunctionApp.parameters.json'
-      functionsRepositoryPath: '$(Build.SourcesDirectory)/AzureValidationMiddleware/src'
+      functionsRepositoryPath: '$(Build.SourcesDirectory)/src/AzureValidationMiddlewareFunctionApp'
       functionConfigurationFilePath: '$(functionsRepositoryPath)/template.settings.json'
-      eventgridQueueTrigerFunctionFilePath: '$(functionsRepositoryPath)/EventgridQueueTrigerFunction/function.json'
-      retryTimerFunctionFilePath: '$(functionsRepositoryPath)/RetryTimerFunction/function.json'
+      eventgridQueueTrigerFunctionFilePath: '$(functionsRepositoryPath)/QueueItemValidationFunction/function.json'
+      retryTimerFunctionFilePath: '$(functionsRepositoryPath)/RetryFunction/function.json'
 
       # SQL DB option variables
-      databaseToValidate: "test-db"
-      databaseServerToValidate: "$(environment)$(databaseToValidate).mssql.database.azure.com"
-      databaseUserToValidate: "adminuser@$(environment)db"
-      devcloudDevSharedVaultName: "$(environment)-shared-kv"
+      databaseToValidate: "servicedbtest"
+      databaseServerToValidate: "servicedbtestsrv.database.windows.net"
+      databaseUserToValidate: "sqllgn01"
+      devcloudDevSharedVaultName: "$(environment)-avm-kv"
       dbSqlPasswordSecret: "dbsqlpassword"
       # General configuration file variables
       sharedKeyVaultName: '$(environment)-shared-kv'
-      automationAccountWebhookSecret: 'db-new-vmWebhook'
       
       ### Function App Resource group variables (eg. name, rg-name, loganalytics etc)
       functionName: 'validation-middleware-function'
@@ -46,13 +46,13 @@ jobs:
       appServiceName: '$(environment)-$(functionAppName)-service'
       appServicePlanName: '$(environment)-$(functionAppName)-serviceplan'
       storageAccountName: '$(environment)shdbnagefst'
-      appInsightsID: '/subscriptions/$(subscriptionIdSource)/resourceGroups/$(environment)-loganalytics-rg/providers/microsoft.insights/components/$(environment)-$(environmentName)-$(hubid)-loganalytics-ai'
+      appInsightsID: '/subscriptions/$(subscriptionIdSource)/resourceGroups/boriszn-we-avm-shared-rg/providers/microsoft.insights/components/$(environment)-loganalytics-avm'
 
       # Event Grid + Storage Account variables
       eventGridName: '$(environment)-validation-middleware-eg'
       eventGridNameResourceGroupName: '$(eventGridName)-rg'
       ## Topic is object which will generates events 
-      eventGridTopic: '/subscriptions/$(subscriptionIdToObserve)'
+      eventGridTopic: '/subscriptions/$(subscriptionIdToObserve)/resourcegroups/boriszn-we-avm-vm-container-rg'
       eventGridQueueStorageAccountName: '$(environment)vmegrid'
       eventGridStorageAccountRg: $(eventGridNameResourceGroupName)
       mainEventQueue: 'main-event-q'
@@ -62,66 +62,79 @@ jobs:
     steps:
 
     # Deploy EventGrid and Storage Account (Where Topic -> Subscription and Endpoint -> Storage Queue)
-    - task: AzurePowerShell@3
-      displayName: 'Deploy EventGrid and Storage Account. Where Topic is Subscription and Endpoint is Storage Queue'
+    - task: AzureCLI@1
+      displayName: Deploy EventGrid and Storage Account. Where Topic is Subscription and Endpoint is Storage Queue
       inputs:
-        azureSubscription: $(subscriptionShared)
-        scriptType: "inlineScript"
-        azurePowerShellVersion: LatestVersion
-        inline: | 
-          # Variables
-          $rsourceGroup="$(eventGridNameResourceGroupName)"
-          $storagename="$(eventGridQueueStorageAccountName)"
-          $queuename="$(mainEventQueue)"
-          $topicname="$(eventGridName)-topic" 
-          $eventSubscriptionName="$(eventGridName)"
-          $topicid="$(eventGridTopic)"
-          $storageSKU = "Standard_LRS"
-          $location = "westeurope"
+        azureSubscription: $(subscription-avm-shared)
+        scriptLocation: inlineScript
+        inlineScript: | 
+            
+            echo "====== Start provision of EventGrid and Storage Account ======"
+            echo "=============================================================="
+        
+            # Variables
+            rsourceGroup="$(eventGridNameResourceGroupName)"
+            storagename="$(eventGridQueueStorageAccountName)"
+            queuename="$(mainEventQueue)"
+            topicname="$(eventGridName)-topic" 
+            eventSubscriptionName="$(eventGridName)"
+            topicid="$(eventGridTopic)"
+            storageSKU="Standard_LRS"
+            location="westeurope"
 
-          # Set az context
-          az account set -s $(subscriptionShared) 
-          az account show
+            # 1. Create a resource group
+            echo "============ Creating Resource Group " $rsourceGroup
+            echo "=========================================================================================================================="
+            az group create --name $rsourceGroup --location $location
 
-          # 1. Create a resource group
-          Write-Host "----- Creating Resource Group " $rsourceGroup
-          az group create --name $rsourceGroup --location $location
+            # 2. Create a custom topic
+            echo "=============== Creating Custom topic " $topicname
+            echo "=========================================================================================================================="
+            az eventgrid topic create --name $topicname -l $location -g $rsourceGroup
 
-          # 2. Create a custom topic
-          Write-Host "----- Creating Custom topic " $topicname
-          az eventgrid topic create --name $topicname -l $location -g $rsourceGroup
+            # 3. Create Queue storage with main Queue and 2 additinal queue (processedQueue, failedQueue)
+            echo "================ Creating Storage Account Queue " $storagename " | "  $queuename
+            echo "=========================================================================================================================="
+            az storage account create -n $storagename -g $rsourceGroup -l $location --sku $storageSKU
+            echo "==== Creating Queue "
+            az storage queue create --name $queuename --account-name $storagename
 
-          # 3. Create Queue storage with main Queue and 2 additinal queue (processedQueue, failedQueue)
-          Write-Host "----- Creating Queue storage with Queue "  $storagename " | "  $queuename
-          az storage account create -n $storagename -g $rsourceGroup -l $location --sku $storageSKU
-          az storage queue create --name $queuename --account-name $storagename
-          ## 3.1 Create 2 additinal Queues 
-          az storage queue create --name $(processedQueueName) --account-name $storagename
-          az storage queue create --name $(retryQueueName) --account-name $storagename
-          ## 3.2 Get storage access key 
-          $storageAccountAccessKey = (az storage account keys list -g $rsourceGroup -n $storagename  --query '[0].value' -o tsv)
-          Write-Host "##vso[task.setvariable variable=storageAccountAccessKey;]$storageAccountAccessKey"
-          
-          # 4. Subscribe to a custom topic
-          Write-Host "----- Creating Event Grid Subscription " $eventSubscriptionName " | topic Id "  $topicid
-          $storageid=$(az storage account show --name $storagename --resource-group $rsourceGroup --query id --output tsv)
-          $queueid="$storageid/queueservices/default/queues/$queuename"
-          
-          # 5. Create Event Grid Subscription
-          az eventgrid event-subscription create `
-            --source-resource-id $topicid `
-            --name $eventSubscriptionName `
-            --endpoint-type "storagequeue" `
-            --endpoint $queueid `
-            --included-event-types Microsoft.Resources.ResourceWriteSuccess `
-            --advanced-filter data.operationName StringContains 'Microsoft.Compute/virtualMachines/write'
+            ## 3.1 Create 2 additinal Queues
+            echo "==================== Create 2 additinal Queues "
+            echo "=========================================================================================================================="
+            az storage queue create --name $(processedQueueName) --account-name $storagename
+            az storage queue create --name $(retryQueueName) --account-name $storagename
+
+            ## 3.2 Get storage access key 
+            echo "==================== Get/Save storage access key "
+            echo "=========================================================================================================================="
+            storageAccountAccessKey=$(az storage account keys list -g $rsourceGroup -n $storagename  --query '[0].value' -o tsv)
+            echo "##vso[task.setvariable variable=storageAccountAccessKey;]$storageAccountAccessKey"
+            echo "=== [result] storage access key " $storageAccountAccessKey
+
+            # 4. Subscribe to a custom topic
+            echo "====================  Creating Event Grid Subscription " $eventSubscriptionName " | topic Id "  $topicid
+            echo "=========================================================================================================================="
+            storageid=$(az storage account show --name $storagename --resource-group $rsourceGroup --query id --output tsv)
+            queueid="$storageid/queueservices/default/queues/$queuename"
+            
+            # 5. Create Event Grid Subscription
+            echo "==================== Create Event Grid Subscription. Topic ID:  $topicid | Event Subscription Name: $eventSubscriptionName | Queue Id: $queueid "
+            echo "=========================================================================================================================="
+            az eventgrid event-subscription create \
+                --source-resource-id $topicid \
+                --name $eventSubscriptionName \
+                --endpoint-type "storagequeue" \
+                --endpoint $queueid \
+                --included-event-types Microsoft.Resources.ResourceWriteSuccess \
+                --advanced-filter data.operationName StringContains 'Microsoft.Compute/virtualMachines/write'
           
     #[Azure Deployment]: Create Or Update Resource Group for Azure Function App
     - task: AzureResourceGroupDeployment@2
       displayName: 'Azure Deployment: Create Or Update Resource Group for the Azure Function App'
       enabled: true
       inputs:
-        azureSubscription: '$(subscriptionShared)'
+        azureSubscription: '$(subscription-avm-shared)'
         resourceGroupName: '$(resourceGroupName)'
         location: 'westeurope'
         csmFile: '$(functionAppDeploymentArmTemplatePath)'
@@ -142,15 +155,15 @@ jobs:
       displayName: "Get Keyvault Secrets"
       continueOnError: true
       inputs:
-        azureSubscription: $(subscriptionShared)
-        KeyVaultName: '$(environment)-az-validation-meddleware-kv'
-        SecretsFilter: dbsqlpassword, ValidationMeedlewareFunctionApp-WebRequestSecurityToken
+        azureSubscription: $(subscription-avm-shared)
+        KeyVaultName: '$(devcloudDevSharedVaultName)'
+        SecretsFilter: dbsqlpassword, ValidationMeedlewareFunctionApp-WebRequestSecurityToken, db-new-vmWebhook
             
     # Replace configuration template file
-    - task: AzurePowerShell@3
+    - task: AzurePowerShell@4
       displayName: 'Replace values in configuration Template file (template.settings.json)'
       inputs:
-        azureSubscription: $(subscriptionShared)
+        azureSubscription: $(subscription-avm-shared)
         scriptType: "inlineScript"
         azurePowerShellVersion: LatestVersion
         inline: | 
@@ -162,9 +175,6 @@ jobs:
             Set-Content -Path $(functionConfigurationFilePath)
             # Replace SharedKeyVaultName
             ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##SharedKeyVaultName##','$(sharedKeyVaultName)') |
-            Set-Content -Path $(functionConfigurationFilePath)
-            # Replace MangedIdentityWebhookSecret
-            ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##AutomationAccountWebhookSecret##','$(automationAccountWebhookSecret)') |
             Set-Content -Path $(functionConfigurationFilePath)
             # Replace EventGridResourceGroupName
             ((Get-Content -path $(functionConfigurationFilePath) -Raw) -replace '##EventGridResourceGroupName##','$(eventGridStorageAccountRg)') |
@@ -210,10 +220,10 @@ jobs:
             Get-Content -path  $(functionConfigurationFilePath)
     
     # Replace storage account name in EventgridQueueTrigerFunction and in RetryTimerFunction function.json file
-    - task: AzurePowerShell@3
+    - task: AzurePowerShell@4
       displayName: 'Replace storage account name in EventgridQueueTrigerFunction and in RetryTimerFunction function.json file'
       inputs:
-        azureSubscription: $(subscriptionShared)
+        azureSubscription: $(subscription-avm-shared)
         scriptType: "inlineScript"
         azurePowerShellVersion: LatestVersion
         inline: | 
@@ -243,39 +253,63 @@ jobs:
     - task: AzureFunctionApp@1
       displayName: Deploy Azure Function App
       inputs:
-        azureSubscription: $(subscriptionShared)
+        azureSubscription: $(subscription-avm-shared)
         appName: $(appServiceName)
         package: $(build.artifactstagingdirectory)/AzureValidationMeedlewareFunctionApp.zip
 
+    # Get App Service object id
+    - task: AzureCLI@1
+      displayName: Get App Service/Function object id
+      inputs:
+        azureSubscription: $(subscription-avm-shared)
+        scriptLocation: inlineScript
+        inlineScript: | 
+            echo "========== Get ObjectId from AD Servcie Principal by app service Display Name ($(appServiceName)) ==========="
+            objectId=$(az ad sp list --all --display-name $(appServiceName) --query '[0].objectId' -o tsv)
+
+            objectId="c3e6fb93-85f5-4d0f-abb9-359d56494059"
+            echo "=========== Function app ObjectId [$objectId] ============"
+            echo "##vso[task.setvariable variable=avmAppServiceObjectId;]$objectId"
+
     # Assign Contributor role for MSI principal
-    - task: AzurePowerShell@3
+    - task: AzurePowerShell@4
       displayName: 'Assign Contributor for MSI Role'
       continueOnError: true
       inputs:
-        azureSubscription: $(subscriptionShared)
+        azureSubscription: $(subscription-avm-shared)
         scriptType: "inlineScript"
         azurePowerShellVersion: LatestVersion
         inline: | 
 
-         # Get ObjectId from AD Servcie Principal by Display Name  
-         $objectId = (az ad sp list --all --display-name $(appServiceName) --query '[0].objectId' -o tsv)
-         echo "-- Function app ObjectId $objectId"
+         $objectId="$(avmAppServiceObjectId)"
+
+         echo "=========== Function app ObjectId [$objectId] ============"
 
          # Check is role assignment alredy exists
-         if((Get-AzureRmRoleAssignment -ObjectId $objectId).Count -ne 0){
-           Write-Host "-- Getting the Role Assignment info --"
-           Get-AzureRmRoleAssignment -ObjectId $objectId
+         echo "============ Checking and Getting Role Assignment ========================"
+         echo "=========================================================================="
+
+         if((Get-AzRoleAssignment -ObjectId $objectId).Count -ne 0){
+           Get-AzRoleAssignment -ObjectId $objectId
          }
 
-          # Create role assignment for Virtual Machines and Network Interfaces to the Lab Sabscription
+          # Create role assignment for Virtual Machines and Network Interfaces to the Sabscription
           try 
           { 
-            Write-Host "-- Creating role assignment for Lab Subscription "  $(subscriptionIdToObserve) ". Resource Group Name" $(eventGridQueueStorageAccountName)
-
-            New-AzureRmRoleAssignment `
+            Write-Host "=========== Creating role assignment for [$(subscriptionIdToObserve)]. Resource Group Name [$(eventGridQueueStorageAccountName)] ==========="
+            Write-Host "=========================================================================================================================================="
+            
+            # Subscription
+            New-AzRoleAssignment `
               -ObjectId $objectId `
               -RoleDefinitionName "Contributor" `
               -Scope "/subscriptions/$(subscriptionIdToObserve)"
+
+            # Resource group
+            # New-AzRoleAssignment `
+            #   -ObjectId $objectId `
+            #   -RoleDefinitionName "Contributor" `
+            #   -Scope "/subscriptions/$(subscriptionIdToObserve)/resourceGroups/$(resourceGroupName)"
           }
           catch {
               Write-Host "An error occurred:"
@@ -286,14 +320,23 @@ jobs:
           try 
           { 
 
-            Write-Host "-- Creating role assignment for Resource Name " $(eventGridQueueStorageAccountName) ". Resource Group Name " $(eventGridStorageAccountRg)
-            
-            New-AzureRmRoleAssignment `
+            Write-Host "======= Creating role assignment for Resource [$(eventGridQueueStorageAccountName)]. Resource Group [$(eventGridStorageAccountRg)] ====="
+            Write-Host "========================================================================================================================================"
+
+            New-AzRoleAssignment `
                 -ObjectId $objectId `
                 -RoleDefinitionName "Contributor" `
                 -ResourceName "$(eventGridQueueStorageAccountName)" `
                 -ResourceType "Microsoft.Storage/storageAccounts" `
                 -ResourceGroupName "$(eventGridStorageAccountRg)"
+
+            # Example
+            #  New-AzRoleAssignment `
+            #     -ObjectId c3e6fb93-85f5-4d0f-abb9-359d56494059 `
+            #     -RoleDefinitionName "Contributor" `
+            #     -ResourceName "devvmegrid" `
+            #     -ResourceType "Microsoft.Storage/storageAccounts" `
+            #     -ResourceGroupName "dev-validation-middleware-eg-rg"
           }
           catch {
               Write-Host "An error occurred:"

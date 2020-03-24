@@ -9,8 +9,8 @@
     },
     {         
         "type": "queue",         
-        "name": "failedQueueItem",         
-        "queueName": "failed-event-q",         
+        "name": "retryQueueItem",         
+        "queueName": "retry-event-q",         
         "connection": "devshared01events_STORAGE",         
         "direction": "out"     
     },

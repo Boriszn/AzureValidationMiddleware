@@ -8,7 +8,6 @@
   "PrincipalAccountId": "##PrincipalAccountId##",
   "SecurityToken": "##SecurityToken##",
   "SharedKeyVaultName": "##SharedKeyVaultName##",
-  "AutomationAccountWebhookSecret": "##MangedIdentityWebhookSecret##",
   "DbSyncNewVmWebhook": "##DbSyncNewVmWebhook##",
   "ResourceGroupName": "##EventGridResourceGroupName##",
   "StorageAccountName" : "##EventGridStorageAccountName##",
